@@ -1,3 +1,4 @@
+
 # clear command window
 clc;
 # remove all variables from workspace
@@ -12,9 +13,10 @@ pkg load signal
 fc=1e3; #1KHz
 # message frequency initialization
 fm=100; #100Hz
-Am=10;
+Am=1;
 Ac=1;
-kf=100;
+kf=10;
+ka=0.5;
 beta=kf*Am/fm;
 
 %%%%%% Time and frequency definition %%%%%%
@@ -39,24 +41,20 @@ else #odd
   f= -(0.5*fs-0.5*df): df : (0.5*fs-0.5*df);
 end
 
-%%%%%%% Baseband Signal %%%%%%%%
-m= Am*sin(2*pi*fm*t);
-# fast fourier transform of baseband signal
-M=fftshift(fft(m)/N);
+%%%%% Baseband Signal %%%%%%%
+m= Am * cos(2*pi*fm*t);
 
-%%%%%%%% Modulated Signal %%%%%%%%%%%%%
+%%%%%%%% FM Modulated Signal %%%%%%%%%%%%%
 # time domain, cumtrapz is integration function
 s= Ac*cos(2*pi*fc*t+2*pi*kf*cumtrapz(t,m));
 # frequency domain
 S=fftshift(fft(s)/N);
-
 %%%%%%%%%%% plotting FM modulated signal %%%%%%%%
 # plotting modulated signal with respect to time
 figure(1);
 plot(t,s);
 xlabel("Time (sec)");
 ylabel("s(t)")
-
 # plotting modulated signal with respect to frequency
 figure(2);
 # using stem instead of plot
@@ -66,23 +64,49 @@ ylabel("|S(f)|")
 box off;
 
 
-%%%%% Receiver %%%%%%%%%%%%%%
-%%%% starting with differentiator %%%%
-g_rec=diff(s)./diff(t);
-t_new=t(2:end);
-%%%%%% Envelope detector %%%%%%%%%
-g_rec=abs(hilbert(g_rec));
-%%%%%%% Removing DC level (mean of signal) %%%%%%%%%
-g_rec=g_rec-mean(g_rec);
-%%%%%%% Changing time vector to remove transient response %%%%%%%%%%%%
-index=t>1/fm & t<9/fm;
-t_new=t_new(index);
-g_rec=g_rec(index);
+%%%%%%%%%% Channel Non-linearities %%%%%%%%%%
+s_out= s + 0.5 * s.^2 + s.^3;
+S=fftshift(fft(s)/N);
+S_out=fftshift(fft(s_out)/N);
+
+# plotting modulated signal with respect to frequency
+figure(3);
+# using stem instead of plot
+stem(f,abs(S_out));
+xlabel("Frequency (Hz)");
+ylabel("|S(f)| after Non-Linear Channel")
+box off;
+
+%%%%%% using carson's law to get Band Width %%%%%%%%%
+df=kf*max(m);
+BW=2*fm+2*df;
+
+
+%%%%%%%% FM receiver %%%%%%%%%%%%%%%%%%%
+%%% Band Pass Filter %%%%%%%%%
+H=zeros(size(f));
+H(f>(fc-0.5*BW)&f<(fc+0.5*BW))=1;
+H(f<-(fc-0.5*BW)&f>-(fc+0.5*BW))=1;
+
+%%%%% Retrieve FM signal %%%%%%%%
+S_out=H.*S_out;
+# plotting modulated signal with respect to frequency
+figure(4);
+# using stem instead of plot
+stem(f,abs(S));
+xlabel("Frequency (Hz)");
+ylabel("|S(f)| after Band Pass Filter")
+box off;
+% plotting signal time domain after retrieval %%
+s_out=real(ifft(ifftshift(S_out)*ts));
+
 %%%% Plotting original signal %%%%%%%
-figure(3)
-plot(t,m/max(m),"-b");
+%%%%%% calling figure 1 again which had the modulated signal with respect tto time
+figure(1)
+box off;
 hold on;
-%%%%%% Plotting retrieved signal %%%%%%%%%%
-plot(t_new,g_rec/max(g_rec),"--r");
-hold on;
+%%%%% Plotting retrieved signal %%%%%%%%%%
+plot(t,s_out/max(s_out),"--r");
 legend("Original Signal", "Retrieved Signal");
+
+
